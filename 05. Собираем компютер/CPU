@@ -1,0 +1,47 @@
+CHIP CPU {
+
+	IN  inM[16], //входное значение из памяти (RAM)        
+	instruction[16], //входная инструкция
+	reset; //сигнал для сброса (перезапуска)          
+
+	OUT outM[16], //выходное значение для памяти       
+	writeM, //сигнал, указывающий, нужно ли записывать в память         
+	addressM[15], //адрес в памяти для записи   
+	pc[15];          
+
+	PARTS:
+	//проверяем старший бит инструкции, если он 0, то а
+    Not(in=instruction[15], out=instructionA);
+    //проверяем с-инструкция ли
+	And(a=instruction[15], b=instruction[5], out=instCAndDestA);
+	//устанавливаем loadA. 1, если это а или с-инструкции. направляет рез в регистр А
+	Or(a=instructionA, b=instCAndDestA, out=loadA);
+	//выбораем между выходом алу и инструкцией
+    Mux16(a=outALU, b=instruction, sel=instructionA, out=inA);
+    //устанавливаем loadD. 1, если это с-инструкция. направляет результат в регистр D
+    And(a=instruction[15], b=instruction[4], out=loadD);
+    //записываем значение inA в регистр A, если loadA == 1
+	ARegister(in=inA, load=loadA, out=outA, out[0..14]=addressM);
+	//тут соответственно для D
+    DRegister(in=inD, load=loadD, out=outD);
+    //выбираем между значением из регистра A и значением из памяти
+    Mux16(a=outA, b=inM, sel=instruction[12], out=aluInY);
+    ALU(x=outD, y=aluInY, zx=instruction[11], nx=instruction[10],
+	zy=instruction[9], ny=instruction[8], f=instruction[7], 
+	no=instruction[6], out=outALU, out=inD, out=outM, zr=zrALU, ng=ngALU);    
+    Not(in=zrALU, out=notZr);
+	Not(in=ngALU, out=notNg);
+	//определяем, результат алу положительный, отрицательным или 0
+    And(a=notZr, b=notNg, out=psALU);
+    And(a=instruction[1], b=zrALU, out=zrMatched);
+    And(a=instruction[2], b=ngALU, out=ngMatched);
+	And(a=instruction[0], b=psALU, out=psMatched);
+    //устанавливаем loadPC
+    Or(a=zrMatched, b=ngMatched, out=ZrorNg);
+	Or(a=psMatched, b=ZrorNg, out=result);
+	And(a=instruction[15], b=result, out=loadPC);
+    //обновляем РС. Если reset равен 1, то сброс
+    PC(in=outA, load=loadPC, inc=true, reset=reset, out[0..14]=pc);
+    //writeM == 1, если это C-инструкция и ее надо записать в память
+    And(a=instruction[15], b=instruction[3], out=writeM);
+}
