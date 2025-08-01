@@ -1,0 +1,13 @@
+CHIP Computer {
+
+    IN reset; //сигнал для сброса
+
+	PARTS:
+	//память для чтения.  используется для хранения инструкций процессора
+	ROM32K(address=romAddress, out=cpuInstruction);
+	//writeM=loadMemory — сигнал, указывающий, нужно ли записывать данные в память
+	//addressM=addressMemory — адрес, по которому процессор будет записывать или считывать данные из памяти
+	//pc=romAddress — регистр счетчика команд, который указывает на адрес следующей инструкции в ROM
+    CPU(inM=cpuInM, instruction=cpuInstruction, reset=reset, outM=inMemory, writeM=loadMemory, addressM=addressMemory, pc=romAddress);
+    Memory(in=inMemory, load=loadMemory, address=addressMemory, out=cpuInM);
+}
