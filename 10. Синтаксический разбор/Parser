@@ -1,0 +1,289 @@
+using System;
+using System.Collections.Generic;
+
+namespace JackCompiling;
+
+public class Parser
+{
+    private readonly Tokenizer tokenizer;
+    private readonly HashSet<string> operators = new() { "&", "|", "<", ">", "=", "+", "-", "*", "/" };
+    private readonly HashSet<string> types = new() { "int", "char", "boolean" };
+    private readonly HashSet<string> methodtypes = new() { "constructor", "method", "function" };
+
+    public Parser(Tokenizer tokenizer)
+    {
+        this.tokenizer = tokenizer;
+    }
+
+    public ClassSyntax ReadClass() =>
+        new(
+            tokenizer.Read("class"),
+            tokenizer.Read(TokenType.Identifier),
+            tokenizer.Read("{"),
+            tokenizer.ReadList(x => ReadClassVarDec(x)),
+            tokenizer.ReadList(x => ReadSubroutine(x)),
+            tokenizer.Read("}"));
+
+    private ClassVarDecSyntax? ReadClassVarDec(Token varToken)
+    {
+        if (varToken.Value != "static" && varToken.Value != "field")
+            return null;
+        var type = tokenizer.TryReadNext();
+        if (type == null)
+            throw new ExpectedException("type", null);
+        if (!types.Contains(type.Value) && type.TokenType != TokenType.Identifier)
+            throw new ExpectedException("value or identifier", type);
+        var names = tokenizer.ReadDelimitedList(() => tokenizer.Read(TokenType.Identifier), ",", ";");
+        var semiColon = tokenizer.Read(";");
+        return new ClassVarDecSyntax(varToken, type, names, semiColon);
+    }
+
+    private SubroutineDecSyntax? ReadSubroutine(Token method)
+    {
+        if (method == null) return null;
+        if (!methodtypes.Contains(method.Value))
+        {
+            tokenizer.PushBack(method);
+            return null;
+        }
+
+        var type = tokenizer.TryReadNext();
+        if (type == null)
+            throw new ExpectedException("type", null);
+        if (!types.Contains(type.Value) && type.TokenType != TokenType.Identifier && type.Value != "void")
+            throw new ExpectedException("type", type);
+        var subName = tokenizer.Read(TokenType.Identifier);
+        var open = tokenizer.Read("(");
+        var parameterList = ReadParameterList();
+        var close = tokenizer.Read(")");
+        var subBody = ReadSubroutineBody();
+        return new SubroutineDecSyntax(method, type, subName, open, parameterList, close, subBody);
+    }
+
+    public ParameterListSyntax ReadParameterList() =>
+        new(tokenizer.ReadDelimitedList(() => ReadParameter(), ",", ")"));
+
+    private Parameter? ReadParameter()
+    {
+        var type = tokenizer.TryReadNext();
+        if (type == null) return null;
+        if (!types.Contains(type.Value) && type.TokenType != TokenType.Identifier)
+        {
+            tokenizer.PushBack(type);
+            return null;
+        }
+
+        var varName = tokenizer.Read(TokenType.Identifier);
+        return new Parameter(type, varName);
+    }
+
+    private SubroutineBodySyntax ReadSubroutineBody() =>
+        new(
+            tokenizer.Read("{"),
+            tokenizer.ReadList(x => ReadVarDec(x)),
+            ReadStatements(),
+            tokenizer.Read("}"));
+
+    private VarDecSyntax? ReadVarDec(Token varWord)
+    {
+        if (varWord.Value != "var") return null;
+        var type = tokenizer.TryReadNext();
+        if (type == null) return null;
+        if (!types.Contains(type.Value) && type.TokenType != TokenType.Identifier) return null;
+        var tail = tokenizer.ReadDelimitedList<Token>(() => tokenizer.TryReadNext(), ",", ";");
+        var semicolon = tokenizer.Read(";");
+        return new VarDecSyntax(varWord, type, tail, semicolon);
+    }
+
+    public StatementsSyntax ReadStatements() => new(tokenizer.ReadList(x => ReadStatement(x)));
+
+    private StatementSyntax? ReadStatement(Token keyword) =>
+        keyword.Value switch
+        {
+            "if" => IfStatement(keyword),
+            "while" => WhileStatement(keyword),
+            "do" => DoStatement(keyword),
+            "let" => LetStatement(keyword),
+            "return" => ReturnStatement(keyword),
+            _ => null
+        };
+
+    private StatementSyntax? IfStatement(Token keyword)
+    {
+        tokenizer.PushBack(keyword);
+
+        var ifWord = tokenizer.Read("if");
+        var circleOpen = tokenizer.Read("(");
+        var expression = ReadExpression();
+        var circleClose = tokenizer.Read(")");
+
+        var curlyOpen = tokenizer.Read("{");
+        var statements = ReadStatements();
+        var curlyClose = tokenizer.Read("}");
+
+        var nextToken = tokenizer.TryReadNext();
+        ElseClause elseStatement = null;
+        if (nextToken == null)
+            return new IfStatementSyntax(ifWord, circleOpen, expression, circleClose, curlyOpen, statements,
+                curlyClose, elseStatement);
+        tokenizer.PushBack(nextToken);
+        if (nextToken.Value == "else")
+            elseStatement = ElseStatement();
+
+        return new IfStatementSyntax(ifWord, circleOpen, expression, circleClose, curlyOpen, statements, curlyClose,
+            elseStatement);
+    }
+
+    private ElseClause ElseStatement() =>
+        new(
+            tokenizer.Read("else"),
+            tokenizer.Read("{"),
+            ReadStatements(),
+            tokenizer.Read("}"));
+
+    private StatementSyntax WhileStatement(Token keyword)
+    {
+        tokenizer.PushBack(keyword);
+        return new WhileStatementSyntax(
+            tokenizer.Read("while"),
+            tokenizer.Read("("),
+            ReadExpression(),
+            tokenizer.Read(")"),
+            tokenizer.Read("{"),
+            ReadStatements(),
+            tokenizer.Read("}"));
+    }
+
+    private StatementSyntax DoStatement(Token keyword)
+    {
+        tokenizer.PushBack(keyword);
+        return new DoStatementSyntax(
+            tokenizer.Read("do"),
+            ReadSubroutineCall(),
+            tokenizer.Read(";"));
+    }
+
+    private StatementSyntax LetStatement(Token keyword)
+    {
+        tokenizer.PushBack(keyword);
+        var lwtWord = tokenizer.Read("let");
+        var varName = tokenizer.Read(TokenType.Identifier);
+        Indexing? index = null;
+        var squareOpen = tokenizer.TryReadNext();
+        if (squareOpen != null)
+        {
+            tokenizer.PushBack(squareOpen);
+            if (squareOpen.Value == "[") index = ReadIndexing();
+        }
+
+        var eq = tokenizer.Read("=");
+        var expression = ReadExpression();
+        var semicolon = tokenizer.Read(";");
+        return new LetStatementSyntax(lwtWord, varName, index, eq, expression, semicolon);
+    }
+
+    private StatementSyntax? ReturnStatement(Token keyword)
+    {
+        tokenizer.PushBack(keyword);
+        var returnWord = tokenizer.Read("return");
+        var temp = tokenizer.TryReadNext() ?? throw new ExpectedException(";", null);
+        if (temp.Value == ";")
+            return new ReturnStatementSyntax(returnWord, null, temp);
+        tokenizer.PushBack(temp);
+        return new ReturnStatementSyntax(
+            returnWord,
+            ReadExpression(),
+            tokenizer.Read(";"));
+    }
+
+
+    public SubroutineCall ReadSubroutineCall() =>
+        new(
+            ReadMethodObjectOrClass(),
+            tokenizer.Read(TokenType.Identifier),
+            tokenizer.Read("("),
+            ReadExpressionList(),
+            tokenizer.Read(")"));
+
+    public ExpressionSyntax ReadExpression() =>
+        new(ReadTerm(), tokenizer.ReadList(x => ReadEndExpression(x)));
+
+    private ExpressionListSyntax ReadExpressionList() =>
+        new(new(tokenizer.ReadDelimitedList(ReadExpression, ",", ")")));
+
+    private ExpressionTail? ReadEndExpression(Token op) =>
+        !operators.Contains(op.Value) ? null : new ExpressionTail(op, ReadTerm());
+
+    public TermSyntax ReadTerm()
+    {
+        var token = tokenizer.TryReadNext();
+        if (token == null)
+            throw new ExpectedException("token", null);
+        if (token.Value is "(" or "-" or "~")
+            tokenizer.PushBack(token);
+        if (token.TokenType is TokenType.IntegerConstant or TokenType.StringConstant)
+        {
+            tokenizer.PushBack(token);
+            ReadValueTerm();
+        }
+
+        switch (token.Value)
+        {
+            case "(":
+                return new ParenthesizedTermSyntax(tokenizer.Read("("), ReadExpression(), tokenizer.Read(")"));
+            case "-" or "~":
+                return ReadUnaryOp();
+        }
+
+        if (token.TokenType is not TokenType.Identifier) return new ValueTermSyntax(token, null);
+        var symbol = tokenizer.TryReadNext();
+        if (symbol is { Value: "(" or "." })
+        {
+            tokenizer.PushBack(symbol);
+            tokenizer.PushBack(token);
+            return new SubroutineCallTermSyntax(ReadSubroutineCall());
+        }
+
+        if (symbol != null) tokenizer.PushBack(symbol);
+        tokenizer.PushBack(token);
+        return ReadValueTerm();
+    }
+
+
+    private ValueTermSyntax ReadValueTerm()
+    {
+        var firstToken = tokenizer.TryReadNext() ?? throw new FormatException();
+        Indexing? index = null;
+        if (firstToken.TokenType is not TokenType.Identifier) return new ValueTermSyntax(firstToken, index);
+        var open = tokenizer.TryReadNext();
+        tokenizer.PushBack(open);
+        if (open is { Value: "[" }) index = ReadIndexing();
+        return new ValueTermSyntax(firstToken, index);
+    }
+
+    private UnaryOpTermSyntax ReadUnaryOp()
+    {
+        var op = tokenizer.Read(TokenType.Symbol);
+        if (op.Value is "-" or "~")
+            return new UnaryOpTermSyntax(op, ReadTerm());
+        throw new FormatException();
+    }
+
+    private Indexing ReadIndexing() =>
+        new(
+            tokenizer.Read("["),
+            ReadExpression(),
+            tokenizer.Read("]"));
+
+    private MethodObjectOrClass? ReadMethodObjectOrClass()
+    {
+        var name = tokenizer.TryReadNext();
+        var dot = tokenizer.TryReadNext();
+
+        if (dot?.Value == ".") return new MethodObjectOrClass(name, dot);
+        if (dot != null) tokenizer.PushBack(dot);
+        if (name != null) tokenizer.PushBack(name);
+
+        return null;
+    }
+}
