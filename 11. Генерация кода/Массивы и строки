@@ -1,0 +1,70 @@
+namespace JackCompiling
+{
+    public partial class CodeWriter
+    {
+        private bool TryWriteStringValue(TermSyntax term)
+        {
+            if (term is not ValueTermSyntax { Value.TokenType: TokenType.StringConstant } stringLiteral)
+                return false;
+
+            var content = stringLiteral.Value.Value;
+            Write($"push constant {content.Length}");
+            Write("call String.new 1");
+
+            foreach (char character in content)
+            {
+                Write($"push constant {(int)character}");
+                Write("call String.appendChar 2");
+            }
+
+            return true;
+        }
+
+        private bool TryWriteArrayAccess(TermSyntax term)
+        {
+            if (term is not ValueTermSyntax { Indexing: not null } arrayAccess)
+                return false;
+
+            var arrayVarInfo = FindVarInfo(arrayAccess.Value.Value);
+            if (arrayVarInfo is null)
+                return false;
+
+            WriteArrayAccessInstructions(arrayVarInfo, arrayAccess.Indexing.Index);
+            return true;
+        }
+
+        private void WriteArrayAccessInstructions(VarInfo arrayVarInfo, ExpressionSyntax index)
+        {
+            Write($"push {arrayVarInfo.SegmentName} {arrayVarInfo.Index}");
+            WriteExpression(index);
+            Write("add");
+            Write("pop pointer 1");
+            Write("push that 0");
+        }
+
+        private bool TryWriteArrayAssignmentStatement(StatementSyntax statement)
+        {
+            if (statement is not LetStatementSyntax { Index: not null } letArrayStatement)
+                return false;
+
+            var arrayVarInfo = FindVarInfo(letArrayStatement.VarName.Value);
+            if (arrayVarInfo is null)
+                return false;
+
+            WriteArrayAssignmentInstructions(arrayVarInfo, letArrayStatement.Index.Index, letArrayStatement.Value);
+            return true;
+        }
+
+        private void WriteArrayAssignmentInstructions(VarInfo arrayVarInfo, ExpressionSyntax index, ExpressionSyntax value)
+        {
+            Write($"push {arrayVarInfo.SegmentName} {arrayVarInfo.Index}");
+            WriteExpression(index);
+            Write("add");
+            WriteExpression(value);
+            Write("pop temp 0");
+            Write("pop pointer 1");
+            Write("push temp 0");
+            Write("pop that 0");
+        }
+    }
+}
