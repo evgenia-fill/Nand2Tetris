@@ -1,0 +1,29 @@
+using System;
+using System.Collections.Generic;
+
+namespace VMTranslator;
+
+public class Parser
+{
+    public VmInstruction[] Parse(string[] vmLines)
+    {
+        var instructions = new List<VmInstruction>();
+
+        for (var lineNumber = 0; lineNumber < vmLines.Length; lineNumber++)
+        {
+            var line = vmLines[lineNumber].Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith("//"))
+                continue;
+            var parts = line.Split("//", StringSplitOptions.RemoveEmptyEntries);
+            line = parts[0].Trim();
+
+            var args = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var instructionName = args[0];
+            var instructionArgs = args.Length > 1 ? args[1..] : Array.Empty<string>();
+            var instruction = new VmInstruction(lineNumber + 1, instructionName, instructionArgs);
+            instructions.Add(instruction);
+        }
+
+        return instructions.ToArray();
+    }
+}
