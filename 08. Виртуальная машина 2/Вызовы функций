@@ -1,0 +1,104 @@
+using System;
+namespace VMTranslator;
+
+public partial class CodeWriter
+{
+    /// <summary>
+    /// Вставляет вызов функции Sys.init без аргументов
+    /// </summary>
+    public void WriteSysInitCall()
+    {
+        if (callsCount == 0) TryWriteFunctionCallCode(new VmInstruction(0, "call", "Sys.init", "0"));
+    }
+
+    /// <summary>
+    /// Транслирует инструкции: call, function, return
+    /// </summary>
+    private bool TryWriteFunctionCallCode(VmInstruction instruction)
+    {
+        var command = instruction.Name;
+        var functionName = instruction.Args.Length > 0 ? instruction.Args[0] : null;
+        int? argumentsCount = instruction.Args.Length > 1 ? int.Parse(instruction.Args[1]) : null;
+        int? localsCount = instruction.Args.Length > 1 ? int.Parse(instruction.Args[1]) : null;
+
+        switch (command)
+        {
+            case "call":
+                if (argumentsCount.HasValue) TranslateCallCode(functionName, (int)argumentsCount);
+                else throw new ArgumentException();
+                break;
+            case "function":
+                if (localsCount.HasValue) TranslateFunctionCode(functionName, (int)localsCount);
+                else throw new ArgumentException();
+                break;
+            case "return":
+                TranslateReturnCode();
+                break;
+            default:
+                return false;
+        }
+        return true;
+    }
+
+    private void TranslateCallCode(string functionName, int argumentsCount)
+    {
+        WriteAsm($"@CALL_RET_{callsCount}");
+        InitFrameCaller();
+        WriteAsm($"@{argumentsCount}", "D=A");
+        WriteAsm("@5", "D=D+A");
+        WriteAsm("@SP", "D=M-D", "@ARG", "M=D");
+        WriteAsm($"@FUN_{functionName}", "0;JMP");
+        WriteAsm($"(CALL_RET_{callsCount})");
+        callsCount++;
+    }
+
+    private void TranslateFunctionCode(string functionName, int localsCount)
+    {
+        WriteAsm($"(FUN_{functionName})");
+        InitLocalSegment(localsCount);
+    }
+
+    private void TranslateReturnCode()
+    {
+        WriteAsm("@ARG", "D=M", "@oldArg", "M=D");
+        WritePopToD();
+        WriteAsm("@retValue", "M=D");
+        WriteAsm("@LCL", "D=M", "@SP", "M=D");
+        WritePopToD();
+        WriteAsm("@THAT", "M=D");
+        WritePopToD();
+        WriteAsm("@THIS", "M=D");
+        WritePopToD();
+        WriteAsm("@ARG", "M=D");
+        WritePopToD();
+        WriteAsm("@LCL", "M=D");
+        WritePopToD();
+        WriteAsm("@retAddress", "M=D");
+        WriteAsm("@oldArg", "D=M+1", "@SP", "M=D");
+        WriteAsm("@retValue", "D=M", "@oldArg", "A=M", "M=D");
+        WriteAsm("@retAddress", "A=M", "0;JMP");
+    }
+
+    private void InitLocalSegment(int localsCount)
+    {
+        if (callsCount > 0) WriteAsm("@SP", "D=M", "@LCL", "M=D", "D=0");
+        for (var i = 0; i < localsCount; i++) 
+            WritePushD();
+    }
+
+    private void InitFrameCaller()
+    {
+        WriteAsm("D=A");
+        WritePushD();
+        WriteAsm("@LCL", "D=M");
+        WritePushD();
+        WriteAsm("@ARG", "D=M");
+        WritePushD();
+        WriteAsm("@THIS", "D=M");
+        WritePushD();
+        WriteAsm("@THAT", "D=M");
+        WritePushD();
+    }
+
+    private int callsCount;
+}
