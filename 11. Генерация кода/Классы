@@ -1,0 +1,228 @@
+using System;
+using System.Collections.Generic;
+
+namespace JackCompiling
+{
+    public partial class CodeWriter
+    {
+        public void WriteClass(ClassSyntax classDeclaration)
+        {
+            currentClassName = classDeclaration.Name.Value;
+
+            var fieldStaticIndex = 0;
+            foreach (var variableGroup in classDeclaration.ClassVars)
+            {
+                var variableKind = variableGroup.KindKeyword.Value == "static" ? VarKind.Static : VarKind.Field;
+
+                foreach (var variable in variableGroup.DelimitedNames)
+                {
+                    var variableName = variable.Value;
+                    var variableType = variableGroup.Type.Value;
+
+                    classSymbols[variableName] = new VarInfo(fieldStaticIndex, variableKind, variableType);
+                    fieldStaticIndex++;
+                }
+            }
+
+            foreach (var subroutine in classDeclaration.SubroutineDec)
+            {
+                switch (subroutine.KindKeyword.Value)
+                {
+                    case "method":
+                        WriteMethod(subroutine);
+                        break;
+                    case "function":
+                        WriteFunction(subroutine);
+                        break;
+                    case "constructor":
+                        WriteConstructor(subroutine);
+                        break;
+                    default:
+                        throw new ArgumentException("Неизвестный тип подпрограммы");
+                }
+            }
+        }
+
+        private void WriteMethod(SubroutineDecSyntax subroutineDeclaration)
+        {
+            var localSymbols = new Dictionary<string, VarInfo>();
+
+            var parameterIndex = 0;
+            foreach (var parameter in subroutineDeclaration.ParameterList.DelimitedParameters)
+            {
+                localSymbols[parameter.Name.Value] = new VarInfo(parameterIndex++, VarKind.Parameter, parameter.Type.Value);
+            }
+
+            var localIndex = 0;
+            foreach (var localDeclaration in subroutineDeclaration.SubroutineBody.VarDec)
+            {
+                foreach (var localVariable in localDeclaration.DelimitedNames)
+                {
+                    localSymbols[localVariable.Value] = new VarInfo(localIndex++, VarKind.Local, localDeclaration.Type.Value);
+                }
+            }
+
+            methodSymbols = localSymbols;
+
+            Write($"function {currentClassName}.{subroutineDeclaration.Name.Value} {localIndex}");
+            Write("push argument 0");
+            Write("pop pointer 0");
+            WriteStatements(subroutineDeclaration.SubroutineBody.Statements);
+        }
+
+        private void WriteFunction(SubroutineDecSyntax subroutineDeclaration)
+        {
+            var localSymbols = new Dictionary<string, VarInfo>();
+
+            var parameterIndex = 0;
+            foreach (var parameter in subroutineDeclaration.ParameterList.DelimitedParameters)
+            {
+                localSymbols[parameter.Name.Value] = new VarInfo(parameterIndex++, VarKind.Parameter, parameter.Type.Value);
+            }
+
+            var localIndex = 0;
+            foreach (var localDeclaration in subroutineDeclaration.SubroutineBody.VarDec)
+            {
+                foreach (var localVariable in localDeclaration.DelimitedNames)
+                {
+                    localSymbols[localVariable.Value] = new VarInfo(localIndex++, VarKind.Local, localDeclaration.Type.Value);
+                }
+            }
+
+            methodSymbols = localSymbols;
+
+            Write($"function {currentClassName}.{subroutineDeclaration.Name.Value} {localIndex}");
+            WriteStatements(subroutineDeclaration.SubroutineBody.Statements);
+        }
+
+        private void WriteConstructor(SubroutineDecSyntax subroutineDeclaration)
+        {
+            var localSymbols = new Dictionary<string, VarInfo>();
+
+            var parameterIndex = 0;
+            foreach (var parameter in subroutineDeclaration.ParameterList.DelimitedParameters)
+            {
+                localSymbols[parameter.Name.Value] = new VarInfo(parameterIndex++, VarKind.Parameter, parameter.Type.Value);
+            }
+
+            var localIndex = 0;
+            foreach (var localDeclaration in subroutineDeclaration.SubroutineBody.VarDec)
+            {
+                foreach (var localVariable in localDeclaration.DelimitedNames)
+                {
+                    localSymbols[localVariable.Value] = new VarInfo(localIndex++, VarKind.Local, localDeclaration.Type.Value);
+                }
+            }
+
+            methodSymbols = localSymbols;
+
+            var fieldCount = CountFieldVariables();
+
+            Write($"function {currentClassName}.new {localIndex}");
+            Write($"push constant {fieldCount}");
+            Write("call Memory.alloc 1");
+            Write("pop pointer 0");
+
+            WriteStatements(subroutineDeclaration.SubroutineBody.Statements);
+        }
+
+        private int CountFieldVariables()
+        {
+            var count = 0;
+            foreach (var symbol in classSymbols.Values)
+            {
+                if (symbol.Kind == VarKind.Field)
+                {
+                    count++;
+                }
+            }
+            return count;
+        }
+
+        private bool TryWriteSubroutineCall(TermSyntax term)
+        {
+            if (term is not SubroutineCallTermSyntax subroutineCallTerm)
+                return false;
+
+            var argumentCount = 0;
+
+            foreach (var argument in subroutineCallTerm.Call.Arguments.DelimitedExpressions)
+            {
+                WriteExpression(argument);
+                argumentCount++;
+            }
+
+            if (subroutineCallTerm.Call.ObjectOrClass is not null)
+            {
+                var targetName = subroutineCallTerm.Call.ObjectOrClass.Name.Value;
+                var targetSymbol = FindVarInfo(targetName);
+
+                if (targetSymbol != null)
+                {
+                    Write($"push {targetSymbol.SegmentName} {targetSymbol.Index}");
+                    argumentCount++;
+                    Write($"call {targetSymbol.Type}.{subroutineCallTerm.Call.SubroutineName.Value} {argumentCount}");
+                }
+                else
+                {
+                    Write($"call {targetName}.{subroutineCallTerm.Call.SubroutineName.Value} {argumentCount}");
+                }
+            }
+            else
+            {
+                Write("push pointer 0");
+                argumentCount++;
+                Write($"call {currentClassName}.{subroutineCallTerm.Call.SubroutineName.Value} {argumentCount}");
+            }
+
+            return true;
+        }
+
+        private bool TryWriteDoStatement(StatementSyntax statement)
+        {
+            if (statement is not DoStatementSyntax doStatement)
+                return false;
+
+            TryWriteSubroutineCall(new SubroutineCallTermSyntax(doStatement.SubroutineCall));
+            Write("pop temp 0"); 
+            return true;
+        }
+
+        private bool TryWriteReturnStatement(StatementSyntax statement)
+        {
+            if (statement is not ReturnStatementSyntax returnStatement)
+                return false;
+
+            if (returnStatement.ReturnValue is not null)
+            {
+                WriteExpression(returnStatement.ReturnValue);
+            }
+            else
+            {
+                Write("push constant 0");
+            }
+
+            Write("return");
+            return true;
+        }
+
+        private bool TryWriteObjectValue(TermSyntax term)
+        {
+            if (term is not ValueTermSyntax valueTerm)
+                return false;
+
+            return valueTerm.Value.Value switch
+            {
+                "this" => WriteAndReturn("push pointer 0"),
+                "null" => WriteAndReturn("push constant 0"),
+                _ => false
+            };
+        }
+
+        private bool WriteAndReturn(string command)
+        {
+            Write(command);
+            return true;
+        }
+    }
+}
