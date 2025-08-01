@@ -1,0 +1,21 @@
+namespace Assembler
+{
+    public class Parser
+    {
+        public string[] RemoveWhitespacesAndComments(string[] lines)
+        {
+            var result = new List<string>();
+            foreach (var line in lines)
+            {
+                var commentIndex = line.IndexOf("//");
+                var newLine = commentIndex >= 0
+                    ? line.Substring(0, commentIndex)
+                    : line;
+                newLine = newLine.Replace(" ", "");
+                if (!string.IsNullOrEmpty(newLine))
+                    result.Add(newLine);
+            }
+            return result.ToArray();
+        }
+    }
+}
