@@ -1,0 +1,44 @@
+namespace VMTranslator;
+
+public partial class CodeWriter
+{
+    /// <summary>
+    /// Транслирует инструкции: label, goto, if-goto
+    /// </summary>
+    private bool TryWriteProgramFlowCode(VmInstruction instruction, string moduleName)
+    {
+        if (instruction.Args.Length < 1)
+            return false;
+
+        var command = instruction.Name;
+        var label = $"{moduleName}_{instruction.Args[0]}";
+
+        return command switch
+        {
+            "label" => WriteLabel(label),
+            "goto" => WriteGoto(label),
+            "if-goto" => WriteIfGoto(label),
+            _ => false
+        };
+    }
+
+
+    private bool WriteLabel(string label)
+    {
+        WriteAsm($"({label})");
+        return true;
+    }
+
+    private bool WriteGoto(string label)
+    {
+        WriteAsm($"@{label}", "0;JMP");
+        return true;
+    }
+
+    private bool WriteIfGoto(string label)
+    {
+        WritePopToD();
+        WriteAsm($"@{label}", "D;JNE");
+        return true;
+    }
+}
