@@ -1,0 +1,14 @@
+CHIP LFSR {
+    IN reset;
+    OUT out;
+    PARTS:
+	DFF(in=nBit0, out=bit0);     
+	DFF(in=nBit1, out=bit1);    
+	DFF(in=nBit2, out=bit2);        
+	DFF(in=nBit3, out=bit3, out = out);     
+    Xor(a=bit2, b=bit3, out=nBit0Xor);
+    Mux(a=nBit0Xor, b=true, sel=reset, out=nBit0); 
+	Mux(a=bit0, b=false, sel=reset, out=nBit1);          
+	Mux(a=bit1, b=false, sel=reset, out=nBit2);      
+    Mux(a=bit2, b=true, sel=reset, out=nBit3);
+}
