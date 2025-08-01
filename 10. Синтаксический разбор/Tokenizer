@@ -1,0 +1,156 @@
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Text.RegularExpressions;
+
+namespace JackCompiling;
+
+public class Tokenizer
+{
+    private readonly Stack<Token?> pushBackStack = new();
+    private readonly List<string> lines;
+    private int lineNumber;
+    private int columnNumber;
+
+    public Tokenizer(string text)
+    {
+        lines = SkipWhiteSpacesAndComments(text.Trim());
+    }
+
+    /// <summary>
+    /// Сначала возвращает все токены, которые вернули методом PushBack в порядке First In Last Out.
+    /// Потом читает и возвращает один следующий токен, либо null, если больше токенов нет.
+    /// Пропускает пробелы и комментарии.
+    ///
+    /// Хорошо, если внутри Token сохранит ещё и строку и позицию в исходном тексте. Но это не проверяется тестами.
+    /// </summary>
+    public Token? TryReadNext()
+    {
+        if (pushBackStack.Count > 0) return pushBackStack.Pop();
+        while (lines.Count > lineNumber && lines[lineNumber][columnNumber] == ' ')
+            UpdatePointer(1);
+        if (lineNumber == lines.Count) return null;
+        var possibleTokens = GetPossibleTokens();
+        foreach (var token in possibleTokens)
+        {
+            var stringConstantToken = possibleTokens[2];
+            if (token == null) continue;
+            var offset = (token == stringConstantToken)
+                ? token.Value.Length + 2
+                : token.Value.Length;
+            UpdatePointer(offset);
+            return token;
+        }
+
+        throw new FormatException();
+    }
+
+    private List<Token?> GetPossibleTokens()
+    {
+        return new List<Token?>
+        {
+            TryReadIntegerConstant(),
+            TryReadSymbol(),
+            TryReadStringConstant(),
+            TryReadKeyword(),
+            TryReadIdentifier()
+        };
+    }
+
+    /// <summary>
+    /// Откатывает токенайзер на один токен назад.
+    /// Если token - null, то игнорирует его и никуда не возвращает.
+    /// Поддержка null нужна для удобства, чтобы использовать TryReadNext, вместе с PushBack без лишних if-ов.
+    /// </summary>
+    public void PushBack(Token? token)
+    {
+        if (token != null) pushBackStack.Push(token);
+    }
+
+    private static HashSet<string> keywords = new()
+    {
+        "class", "constructor", "function", "method", "field", "static", "var",
+        "int", "char", "boolean", "void", "true", "false", "null", "this", "let",
+        "do", "if", "else", "while", "return"
+    };
+
+    private static HashSet<char> symbols = new()
+    {
+        '{', '}', '(', ')', '[', ']', '.', ';', '+', '-', '*', '/', '&', '|', '<', '>', '=', '~', ','
+    };
+
+    private Token? TryReadSymbol() => symbols.Contains(lines[lineNumber][columnNumber])
+        ? new Token(TokenType.Symbol, lines[lineNumber][columnNumber].ToString(), lineNumber, columnNumber)
+        : null;
+
+    private Token? TryReadKeyword()
+    {
+        var line = lines[lineNumber];
+        return (from keyword in keywords
+            where keyword.Length + columnNumber <= line.Length
+            where line.Substring(columnNumber, keyword.Length) == keyword
+            where keyword.Length + columnNumber == line.Length || line[keyword.Length + columnNumber] == ' ' ||
+                  symbols.Contains(line[keyword.Length + columnNumber])
+            select new Token(TokenType.Keyword, keyword, lineNumber, columnNumber)).FirstOrDefault();
+    }
+
+    private Token? TryReadIdentifier()
+    {
+        var line = lines[lineNumber];
+        var identifierPattern = new Regex(@"[\D][_\w\d]*");
+        if (int.TryParse(line[columnNumber].ToString(), out _)) return null;
+        var match = identifierPattern.Match(line, columnNumber);
+        return match.Success ? new Token(TokenType.Identifier, match.Value, lineNumber, columnNumber) : null;
+    }
+
+    private Token? TryReadIntegerConstant()
+    {
+        var line = lines[lineNumber];
+        if (line[columnNumber] == '0')
+            return new Token(TokenType.IntegerConstant, "0", lineNumber, columnNumber);
+        var integerConstantPattern = new Regex("[0-9]+");
+        if (!int.TryParse(line[columnNumber].ToString(), out _)) return null;
+        var match = integerConstantPattern.Match(line, columnNumber);
+        return match.Success ? new Token(TokenType.IntegerConstant, match.Value, lineNumber, columnNumber) : null;
+    }
+
+    private Token? TryReadStringConstant()
+    {
+        var stringPattern = new Regex("\"[^\"\n]*\"");
+        var line = lines[lineNumber];
+        if (line[columnNumber] != '\"') return null;
+        var match = stringPattern.Match(line, columnNumber);
+        if (!match.Success) return null;
+        var value = match.Value[1..^1];
+        return new Token(TokenType.StringConstant, value, lineNumber, columnNumber);
+    }
+
+    private static List<string> SkipWhiteSpacesAndComments(string text)
+    {
+        return DeleteMultiLineComments(text)
+            .Split('\n')
+            .Select(line => line
+                .Replace("\t", "")
+                .Replace("\r", ""))
+            .Select(DeleteSingleLineComments)
+            .Where(line => line.Length > 0)
+            .ToList();
+    }
+
+    private static string DeleteSingleLineComments(string line) => Regex.Replace(line, @"//.*", "").Trim();
+
+    private static string DeleteMultiLineComments(string line)
+    {
+        var commentPattern = @"/\*([\s\S]*?)\*/";
+        var result = Regex.Replace(line, commentPattern, "");
+        return result;
+    }
+
+    private void UpdatePointer(int offset)
+    {
+        columnNumber += offset;
+        if (columnNumber != lines[lineNumber].Length) return;
+        columnNumber = 0;
+        lineNumber++;
+    }
+}
