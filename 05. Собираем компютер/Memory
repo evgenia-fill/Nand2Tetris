@@ -1,0 +1,17 @@
+CHIP Memory {
+	IN in[16], //16-битный вход с данными для записи в память
+	load, //сигнал, который указывает, нужно ли загружать данные в память
+	address[15]; //15-битный адрес с указанием, куда в памяти будут записаны или откуда будут считаны данные
+    OUT out[16]; //16-битный выход с данными
+
+	PARTS:
+	//распределяет load на loadRAM и loadScreen в зависимости бита address[14]. Если address[14] == 0, то load -> loadRAM (данные будут загружены в RAM), если 1 — на loadScreen (данные будут загружены на экран)
+	DMux(in=load, sel=address[14], a=loadRAM, b=loadScreen);
+	//если loadRAM активно, данные будут записаны в RAM по указанному адресу. Выходные данные из RAM будут доступны на outRAM
+	RAM16K(in=in, load=loadRAM, address=address[0..13], out=outRAM);
+	//если loadScreen активно, данные будут записаны на экран по указанному адресу. сохраненные по этому адресу данные будут доступны на outScreen
+	Screen(in=in, load=loadScreen, address=address[0..12], out=outScreen);
+	Keyboard(out=outKeyboard);
+	//выбирает один из четырех выводов (два выхода от RAM, выход от экрана и выход от клавиатуры)
+    Mux4Way16(a=outRAM, b=outRAM, c=outScreen, d=outKeyboard, sel=address[13..14], out=out);
+}
