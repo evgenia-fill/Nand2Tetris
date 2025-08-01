@@ -1,0 +1,135 @@
+using System;
+using System.Collections.Generic;
+
+namespace VMTranslator;
+
+public partial class CodeWriter
+{
+    private bool TryWriteStackCode(VmInstruction instruction, string moduleName)
+    {
+        if (instruction.Args.Length != 2) return false;
+
+        var segment = instruction.Args[0];
+        var index = int.Parse(instruction.Args[1]);
+
+        if (instruction.Name == "push")
+        {
+            WritePush(segment, index, moduleName);
+            return true;
+        }
+
+        if (instruction.Name != "pop") return false;
+        WritePopTo(segment, index, moduleName);
+        return true;
+    }
+
+    private void WritePush(string segment, int index, string moduleName)
+    {
+        var baseAddress = segment switch
+        {
+            "local" => "@LCL",
+            "argument" => "@ARG",
+            "this" => "@THIS",
+            "that" => "@THAT",
+            "pointer" => $"@{3 + index}",
+            "temp" => $"@{5 + index}",
+            "static" => $"@{moduleName}.{index}",
+            "constant" => $"@{index}",
+            _ => null
+        };
+
+        if (baseAddress == null) return;
+        if (segment == "constant") WriteAsm(baseAddress, "D=A");
+		else if (segment != "pointer" && segment != "temp" && segment != "static")
+ 			WriteAsm(baseAddress, "D=M", $"@{index}", "A=D+A", "D=M");
+        else WriteAsm(baseAddress, "D=M");
+        WritePushD();
+    }
+
+    private void WritePushD()
+    {
+        WriteAsm(
+            "@SP",
+            "A=M",
+            "M=D",
+            "@SP",
+            "M=M+1"
+        );
+    }
+
+    private void WritePopToD()
+    {
+        WriteAsm(
+            "@SP",
+            "M=M-1",
+            "A=M",
+            "D=M"
+        );
+    }
+
+    private void WritePopTo(string segment, int index, string moduleName)
+    {
+        switch (segment)
+        {
+            case "local":
+            case "argument":
+            case "this":
+            case "that":
+                WritePopToMemorySegment(segment, index);
+                break;
+            case "pointer":
+                WritePopToPointer(index);
+                break;
+            case "temp":
+                WritePopToTemp(index);
+                break;
+            case "static":
+                WritePopToStatic(index, moduleName);
+                break;
+            default:
+                throw new ArgumentException("Unknown segment type");
+        }
+    }
+
+    private void WritePopToMemorySegment(string segment, int index)
+    {
+        var baseAddress = segment switch
+        {
+            "local" => "@LCL",
+            "argument" => "@ARG",
+            "this" => "@THIS",
+            "that" => "@THAT",
+            _ => throw new ArgumentException("Invalid segment")
+        };
+
+        WriteAsm(baseAddress, "D=M", $"@{index}", "D=D+A", "@R13", "M=D");
+        WritePopToD();
+        WriteAsm("@R13", "A=M", "M=D");
+    }
+
+    private void WritePopToPointer(int index)
+    {
+        WritePopToD();
+        switch (index)
+        {
+            case 0:
+                WriteAsm("@THIS", "M=D");
+                break;
+            case 1:
+                WriteAsm("@THAT", "M=D");
+                break;
+        }
+    }
+
+    private void WritePopToTemp(int index)
+    {
+        WritePopToD();
+        WriteAsm($"@{5 + index}", "M=D");
+    }
+
+    private void WritePopToStatic(int index, string moduleName)
+    {
+        WritePopToD();
+        WriteAsm($"@{moduleName}.{index}", "M=D");
+    }
+}
