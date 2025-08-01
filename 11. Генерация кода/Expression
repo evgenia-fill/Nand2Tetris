@@ -1,0 +1,102 @@
+using System;
+using System.Collections.Generic;
+
+namespace JackCompiling;
+
+public partial class CodeWriter
+{
+    private static readonly Dictionary<string, string> BinaryOperations = new()
+    {
+        { "+", "add" }, { "-", "sub" }, { "*", "call Math.multiply 2" },
+        { "/", "call Math.divide 2" }, { "&", "and" }, { "|", "or" },
+        { "<", "lt" }, { ">", "gt" }, { "=", "eq" }
+    };
+
+    public void WriteExpression(ExpressionSyntax expression)
+    {
+        WriteTerm(expression.Term);
+        
+        foreach (var operationTerm in expression.Tail)
+        {
+            WriteTerm(operationTerm.Term);
+            resultVmCode.Add(BinaryOperations[operationTerm.Operator.Value]);
+        }
+    }
+
+    private bool TryWriteNumericTerm(TermSyntax term) => term switch
+    {
+        ValueTermSyntax valueTerm => ProcessValueTerm(valueTerm),
+        UnaryOpTermSyntax unaryTerm => ProcessUnaryOperation(unaryTerm),
+        ParenthesizedTermSyntax parenTerm => ProcessParenthesizedTerm(parenTerm),
+        _ => false
+    };
+
+    private bool ProcessParenthesizedTerm(ParenthesizedTermSyntax parenTerm)
+    {
+        WriteExpression(parenTerm.Expression);
+        return true;
+    }
+
+    private bool ProcessUnaryOperation(UnaryOpTermSyntax unaryTerm)
+    {
+        WriteTerm(unaryTerm.Term);
+        resultVmCode.Add(unaryTerm.UnaryOp.Value == "-" ? "neg" : "not");
+        return true;
+    }
+
+    private bool ProcessValueTerm(ValueTermSyntax valueTerm)
+    {
+        var token = valueTerm.Value;
+        return token.TokenType switch
+        {
+            TokenType.IntegerConstant => HandleIntegerConstant(token.Value),
+            TokenType.Keyword => HandleKeywordConstant(token.Value),
+            TokenType.Identifier => HandleIdentifier(token.Value),
+            _ => false
+        };
+    }
+
+    private bool HandleIntegerConstant(string value)
+    {
+        resultVmCode.Add($"push constant {value}");
+        return true;
+    }
+
+    private bool HandleKeywordConstant(string keyword)
+    {
+        if (keyword == "true")
+        {
+            resultVmCode.Add("push constant 0");
+            resultVmCode.Add("not");
+        }
+        else if (keyword == "false")
+        {
+            resultVmCode.Add("push constant 0");
+        }
+        return true;
+    }
+
+    private bool HandleIdentifier(string identifier)
+    {
+        if (TryFindVariableInfo(identifier, out var varInfo))
+        {
+            resultVmCode.Add($"push {varInfo.SegmentName} {varInfo.Index}");
+            return true;
+        }
+        return false;
+    }
+
+    private bool TryFindVariableInfo(string name, out VarInfo varInfo)
+    {
+        return methodSymbols.TryGetValue(name, out varInfo) || classSymbols.TryGetValue(name, out varInfo);
+    }
+
+    private void WriteTerm(TermSyntax term)
+    {
+        if (!(TryWriteStringValue(term) || TryWriteArrayAccess(term) || TryWriteObjectValue(term) || 
+              TryWriteSubroutineCall(term) || TryWriteNumericTerm(term)))
+        {
+            throw new FormatException();
+        }
+    }
+}
