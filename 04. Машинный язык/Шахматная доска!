@@ -1,0 +1,74 @@
+@SCREEN
+D = A
+@pixelPos
+M = D
+@8
+D = A
+@subCounter
+M = D
+
+(MAINLOOP)
+  @subCounter
+  D = M
+  @END_PROGRAM
+  D; JEQ
+
+  @256
+  D = A
+  @loopCounter
+  M = D
+
+
+  (BLACKWHITE)
+    @loopCounter       
+    D=M
+    @CHECK_END         
+    D;JEQ
+
+    @pixelPos  
+    A=M
+    M=-1               
+    @pixelPos
+    M=M+1          
+    A=M
+    M=0              
+    @pixelPos
+    M=M+1        
+    @loopCounter
+    M=M-1           
+    @BLACKWHITE
+    0;JMP             
+
+
+  (CHECK_END)
+    @subCounter
+    M=M-1            
+    @256
+    D=A              
+    @loopCounter
+    M=D              
+
+
+  (WHITEBLACK)
+    @loopCounter
+    D=M
+    @MAINLOOP        
+    D;JEQ
+
+    @pixelPos
+    A=M
+    M=0                
+    @pixelPos
+    M=M+1            
+    A=M
+    M=-1             
+    @pixelPos
+    M=M+1          
+    @loopCounter
+    M=M-1              
+    @WHITEBLACK
+    0;JMP           
+
+(END_PROGRAM)
+    @END_PROGRAM
+    0;JMP
