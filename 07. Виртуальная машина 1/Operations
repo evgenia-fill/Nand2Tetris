@@ -1,0 +1,74 @@
+using System.Collections.Generic; 
+ 
+namespace VMTranslator; 
+ 
+public partial class CodeWriter 
+{ 
+    /// <summary> 
+    /// Транслирует инструкции: 
+    /// * арифметических операция: add sub, neg 
+    /// * логических операций: eq, gt, lt, and, or, not 
+    /// </summary> 
+    /// <returns>true − если это логическая или арифметическая инструкция, иначе — false.</returns> 
+    private bool TryWriteLogicAndArithmeticCode(VmInstruction instruction) 
+    { 
+        var operation = instruction.Name; 
+        var success = TwoOperandsOps.ContainsKey(operation) || 
+            OneOperandsOps.ContainsKey(operation) || CompareOps.ContainsKey(operation); 
+        var code = ""; 
+        if (success) 
+        { 
+            if (TwoOperandsOps.ContainsKey(operation) || OneOperandsOps.ContainsKey(operation)) 
+                code = TranslateMath(operation); 
+            else 
+            { 
+                code = TranslateCompare(operation, CompareCounter.ToString()); 
+                CompareCounter++; 
+            } 
+            WriteAsm(code.Split('\n')); 
+        } 
+        return success; 
+    } 
+ 
+    private int CompareCounter = 0; 
+ 
+    private string TranslateMath(string operation) 
+    { 
+        return TwoOperandsOps.ContainsKey(operation) ? ("\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nM=M" +  
+            TwoOperandsOps[operation] + "D\n@SP\nM=M+1\n") : 
+            ("\n@SP\nM=M-1\nA=M\nM=" + OneOperandsOps[operation] + "M\n@SP\nM=M+1\n"); 
+    } 
+ 
+    private string TranslateCompare(string operation, string num) 
+    { 
+        var yes = "@true" + num; 
+        var no = "@false" + num; 
+        var jump = "@jump" + num; 
+        var trueSection = "(true" + num + ")\nD=-1\n" + jump + "\n0;JMP\n"; 
+        var falseSection = "(false" + num + ")\nD=0\n" + jump + "\n0;JMP\n"; 
+        var jumpSection = "(jump" + num + ")\n@SP\nA=M\nM=D\n@SP\nM=M+1\n"; 
+        return "\n@SP\nM=M-1\nA=M\nD=M\n@SP\nM=M-1\nA=M\nD=M-D\n" + yes + "\nD;" + CompareOps[operation][0] + "\n" + 
+            no + "\nD;" + CompareOps[operation][1] + "\n" + trueSection + falseSection + jumpSection; 
+    } 
+ 
+    private Dictionary<string, string> TwoOperandsOps = new Dictionary<string, string>()  
+    {    
+        { "add", "+" }, 
+        { "sub", "-" }, 
+        { "and", "&" }, 
+        { "or", "|" } 
+    }; 
+ 
+    private Dictionary<string, string> OneOperandsOps = new Dictionary<string, string>() 
+    {    
+        { "neg", "-" }, 
+        { "not", "!" }, 
+    }; 
+ 
+    private Dictionary<string, string[]> CompareOps = new Dictionary<string, string[]>() 
+    {    
+        { "eq", new string[] { "JEQ", "JNE" } }, 
+        { "gt", new string[] { "JGT", "JLE" } }, 
+        { "lt", new string[] { "JLT", "JGE" } } 
+    }; 
+}
