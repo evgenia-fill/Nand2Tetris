@@ -1,0 +1,53 @@
+CHIP CPU2 {
+
+    IN  inM[16],         // M value input  (M = contents of RAM[A])
+        instruction[16], // Instruction for execution
+        reset;           // Signals whether to re-start the current
+                         // program (reset==1) or continue executing
+                         // the current program (reset==0).
+
+    OUT outM[16],        // M value output
+        writeM,          // Write to M? 
+        addressM[15],    // Address in data memory (of M)
+        pc[15];          // address of next instruction
+
+    PARTS:
+    Mux16(a=instruction, b=outALU, sel=instruction[15], out=inA);
+
+    Not(in=instruction[15], out=isAInstruction);
+
+    Or(a=isAInstruction, b=instruction[5], out=loadA);
+    ARegister(in=inA, load=loadA, out=outA, out[0..14]=addressM);
+
+    Mux16(a=outA, b=inM, sel=instruction[12], out=outAM);
+
+    Mux16(a=outD2, b=outD, sel=instruction[13], out=outData);
+
+    ALU(x=outData, y=outAM, 
+    zx=instruction[11], nx=instruction[10], zy=instruction[9], 
+    ny=instruction[8], f=instruction[7], no=instruction[6], 
+    out=outALU, out=outM, zr=isZero, ng=isNegative);
+
+    And(a=instruction[15], b=instruction[3], out=writeM);
+
+    And(a=instruction[15], b=instruction[4], out=isLoad);
+    And(a=isLoad, b=instruction[14], out=isLoadD);
+    DRegister(in=outALU, load=isLoadD, out=outD);
+
+    Not(in=instruction[14], out=isD2);
+    And(a=isLoad, b=isD2, out=isLoadD2);
+    Register(in=outALU, load=isLoadD2, out=outD2);
+
+    Or(a=isZero, b=isNegative, out=isNotPositive);
+    Not(in=isNotPositive, out=isPositive);
+
+    And(a=instruction[0], b=isPositive, out=jumpPositive);
+    And(a=instruction[1], b=isZero, out=jumpZero);
+    And(a=instruction[2], b=isNegative, out=jumpNegative);
+
+    Or(a=jumpNegative, b=jumpZero, out=jumpNegativeZero);
+    Or(a=jumpNegativeZero, b=jumpPositive, out=jumpType);
+    And(a=jumpType, b=instruction[15], out=jump);
+
+    PC(in=outA, load=jump, inc=true, reset=reset, out[0..14]=pc);
+}
