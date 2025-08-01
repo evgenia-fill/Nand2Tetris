@@ -1,0 +1,100 @@
+using System.Collections.Generic;
+using System.Linq;
+using System;
+
+namespace Assembler
+{
+    public class HackTranslator
+    {
+        private static readonly Dictionary<string, string> DestTable = new()
+        {
+            { "M", "001" }, { "D", "010" }, { "MD", "011" },
+            { "A", "100" }, { "AM", "101" }, { "AD", "110" }, { "AMD", "111" },
+        };
+
+        private static readonly Dictionary<string, string> CompTable = new()
+        {
+            { "0", "0101010" }, { "1", "0111111" }, { "-1", "0111010" },
+            { "D", "0001100" }, { "A", "0110000" }, { "!D", "0001101" },
+            { "!A", "0110001" }, { "-D", "0001111" }, { "-A", "0110011" },
+            { "D+1", "0011111" }, { "A+1", "0110111" }, { "D-1", "0001110" },
+            { "A-1", "0110010" }, { "D+A", "0000010" }, { "D-A", "0010011" },
+            { "A-D", "0000111" }, { "D&A", "0000000" }, { "D|A", "0010101" },
+            { "M", "1110000" }, { "!M", "1110001" }, { "-M", "1110011" },
+            { "M+1", "1110111" }, { "M-1", "1110010" }, { "D+M", "1000010" },
+            { "D-M", "1010011" }, { "M-D", "1000111" }, { "D&M", "1000000" },
+            { "D|M", "1010101" }
+        };
+
+        private static readonly Dictionary<string, string> JumpTable = new()
+        {
+            { "JGT", "001" }, { "JEQ", "010" }, { "JGE", "011" }, 
+            { "JLT", "100" }, { "JNE", "101" }, { "JLE", "110" }, 
+            { "JMP", "111" }
+        };
+        
+        private int nextAvailableAddress = 16;
+        
+        public string[] TranslateAsmToHack(string[] instructions, Dictionary<string, int> symbolTable)
+        {
+            var result = new List<string>();
+
+            foreach (var instruction in instructions)
+            {
+                if (instruction.StartsWith("@"))
+                    result.Add(AInstructionToCode(instruction, symbolTable));
+                else result.Add(CInstructionToCode(instruction));
+            }
+            
+            return result.ToArray();
+        }
+        
+        public string AInstructionToCode(string aInstruction, Dictionary<string, int> symbolTable)
+        {
+           var value = aInstruction[1..];
+
+           if (value.All(char.IsDigit))
+           {
+         if (!int.TryParse(value, out var address) || address < 0 || address > 32767)
+                   throw new Exception($"Invalid address value: {value}");
+               
+               return "0" + Convert.ToString(address, 2).PadLeft(15, '0');
+           }
+
+           if (!symbolTable.ContainsKey(value))
+           {
+               symbolTable[value] = nextAvailableAddress;
+               nextAvailableAddress++;
+           }
+           
+           var addressOne = symbolTable[value];
+           return "0" + Convert.ToString(addressOne, 2).PadLeft(15, '0');
+        }
+        
+        public string CInstructionToCode(string cInstruction)
+        {
+            var parts = cInstruction.Split(new[] { "=", ";"}, StringSplitOptions.RemoveEmptyEntries);
+            
+            var dest = cInstruction.Contains("=") ? parts[0] : string.Empty;
+            var comp = cInstruction.Contains(";") ? parts[^2] : parts.Last();
+            var jump = cInstruction.Contains(";") ? parts.Last() : string.Empty;
+            
+            if (!CompTable.TryGetValue(comp, out var compCode))
+                throw new FormatException($"Invalid comp: {comp}");
+            
+            var destCode = string.IsNullOrEmpty(dest) 
+                ? "000" 
+                : DestTable.TryGetValue(dest, out var destValue) 
+                    ? destValue 
+                    : throw new FormatException($"Invalid dest: {dest}");
+                
+            var jumpCode = string.IsNullOrEmpty(jump) 
+                ? "000" 
+                : JumpTable.TryGetValue(jump, out var jumpValue)
+                    ? jumpValue 
+                    : throw new FormatException($"Invalid jump: {jump}");
+        
+            return "111" + compCode + destCode + jumpCode;
+        }   
+    }
+}
