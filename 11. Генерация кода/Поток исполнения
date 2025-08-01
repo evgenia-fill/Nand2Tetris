@@ -1,0 +1,94 @@
+using System;
+
+namespace JackCompiling;
+
+public partial class CodeWriter
+{
+    public void WriteStatements(StatementsSyntax statements)
+    {
+        foreach (var statement in statements.Statements)
+            WriteStatement(statement);
+    }
+
+    private void WriteStatement(StatementSyntax statement)
+    {
+        if (!(TryWriteVarAssignmentStatement(statement) ||
+              TryWriteProgramFlowStatement(statement) ||
+              TryWriteDoStatement(statement) || 
+              TryWriteArrayAssignmentStatement(statement) || 
+              TryWriteReturnStatement(statement))) 
+        {
+            throw new FormatException($"Unknown statement [{statement}]");
+        }
+    }
+    
+    private bool TryWriteVarAssignmentStatement(StatementSyntax statement)
+    {
+        if (statement is not LetStatementSyntax letStatement)
+            return false;
+
+        WriteExpression(letStatement.Value);
+        var varName = letStatement.VarName.Value;
+
+        if (!TryGetVariableInfo(varName, out var varInfo))
+            throw new InvalidOperationException();
+
+        resultVmCode.Add($"pop {varInfo.SegmentName} {varInfo.Index}");
+        return true;
+    }
+
+    private bool TryGetVariableInfo(string varName, out VarInfo varInfo)
+    {
+        return methodSymbols.TryGetValue(varName, out varInfo) || classSymbols.TryGetValue(varName, out varInfo);
+    }
+
+    private bool TryWriteProgramFlowStatement(StatementSyntax statement)
+    {
+        return statement switch
+        {
+            IfStatementSyntax ifStatement => ProcessIfStatement(ifStatement),
+            WhileStatementSyntax whileStatement => ProcessWhileStatement(whileStatement),
+            _ => false
+        };
+    }
+
+    private bool ProcessIfStatement(IfStatementSyntax ifStatement)
+    {
+        var falseLabel = GenerateLabel();
+        var endLabel = GenerateLabel();
+
+        WriteExpression(ifStatement.Condition);
+        resultVmCode.Add("not");
+        resultVmCode.Add($"if-goto {falseLabel}");
+        WriteStatements(ifStatement.TrueStatements);
+        resultVmCode.Add($"goto {endLabel}");
+        resultVmCode.Add($"label {falseLabel}");
+
+        if (ifStatement.ElseClause != null)
+            WriteStatements(ifStatement.ElseClause.FalseStatements);
+
+        resultVmCode.Add($"label {endLabel}");
+        return true;
+    }
+
+    private bool ProcessWhileStatement(WhileStatementSyntax whileStatement)
+    {
+        var startLabel = GenerateLabel();
+        var conditionLabel = GenerateLabel();
+        var endLabel = GenerateLabel();
+
+        resultVmCode.Add($"label {startLabel}");
+        WriteExpression(whileStatement.Condition);
+        resultVmCode.Add($"if-goto {conditionLabel}");
+        resultVmCode.Add($"goto {endLabel}");
+
+        resultVmCode.Add($"label {conditionLabel}");
+        WriteStatements(whileStatement.Statements);
+        resultVmCode.Add($"goto {startLabel}");
+
+        resultVmCode.Add($"label {endLabel}");
+        return true;
+    }
+
+    private string GenerateLabel() => $"label_{Guid.NewGuid():N}";
+}
