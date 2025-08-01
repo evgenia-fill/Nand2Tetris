@@ -1,0 +1,44 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+
+namespace VMTranslator;
+
+public partial class CodeWriter
+{
+    public readonly List<string> ResultAsmCode;
+
+    public CodeWriter(List<string> resultAsmCode)
+    {
+        ResultAsmCode = resultAsmCode;
+    }
+
+    public virtual void WriteInstruction(VmInstruction instruction, string moduleName)
+    {
+        var success = TryWriteStackCode(instruction, moduleName)
+                      || TryWriteLogicAndArithmeticCode(instruction)
+                      || TryWriteProgramFlowCode(instruction, moduleName)
+                      || TryWriteFunctionCallCode(instruction);
+        if (!success)
+            throw new FormatException($"Unknown instruction [{instruction}]");
+    }
+
+    public void WriteModule(string moduleName, string[] vmLines)
+    {
+        var lines = new Parser().Parse(vmLines);
+        foreach(var line in lines)
+        {
+            WriteInstruction(line, moduleName);
+        }
+    }
+
+    public void WriteModuleFromFile(string filename)
+    {
+ 		WriteModule(Path.GetFileNameWithoutExtension(filename),File.ReadAllLines(filename));
+    }
+
+    private void WriteAsm(params string[] instructions)
+    {
+        ResultAsmCode.AddRange(instructions);
+    }
+}
