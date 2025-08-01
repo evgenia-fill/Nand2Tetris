@@ -1,0 +1,202 @@
+//Подготавливаем переменные
+@currentAddress 
+M = 0 //задаем текущий адрес
+@previousAddress
+M = 0
+
+(LOOP)
+@KBD //инициализируем клавиатуру
+D = M //считываем значение с клавиатуры
+@getKey
+M = D
+@previousAddress
+D = D - M
+@LOOP
+D; JEQ //если клавиша не изменилась, то идем в (LOOP)
+
+@currentAddress 
+D = M //получаем значение от currentAddress
+@saveAddress //сохранение текущего состояния
+M = D
+
+@saveAddress
+A = M
+M = 0
+@7
+D = A
+@count //инициализируем счетчик
+M = D
+
+(CLEAR) //clear the screen
+@saveAddress
+D = M
+@32
+D = D + A //переход на следующую строку 
+@saveAddress
+M = D
+A = M
+M = 0
+@count
+MD = M - 1 //отправляем результат одновременно и в M, и в D
+@CLEAR
+D; JGT //если D == 0, то прекращаем CLEAR
+
+@getKey
+D = M
+@previousAddress
+M = D
+
+@130 //считываем клавиши
+D = A
+@getKey
+D = D - M
+@DRAW_LEFT
+D; JEQ //if D == 0, draw left
+
+@131 //аналогично для остальных сторон
+D = A
+@getKey
+D = D - M
+@DRAW_UP
+D; JEQ //if D == 0, draw up
+
+@132
+D = A
+@getKey
+D = D - M
+@DRAW_RIGHT
+D; JEQ //if D == 0, draw right
+
+@133 
+D = A
+@getKey
+D = D - M
+@DRAW_DOWN
+D; JEQ //if D == 0, draw down
+
+@LOOP
+0; JMP //бесконечный цикл
+
+//задаем функции
+(DRAW_LEFT)
+@3978
+D = A
+@currentAddress 
+M = D
+@DRAW
+0; JMP 
+
+(DRAW_UP) //аналогично для остальных
+@2640
+D = A
+@currentAddress 
+M = D
+@DRAW
+0; JMP
+
+(DRAW_RIGHT)
+@3989
+D = A
+@currentAddress 
+M = D
+@DRAW
+0; JMP
+
+(DRAW_DOWN)
+@5296
+D = A
+@currentAddress 
+M = D
+@DRAW
+0; JMP
+
+(DRAW) //draw smile
+
+@SCREEN //инициализируем экран
+D = A
+@currentAddress 
+M = D + M
+D = M
+@saveAddress
+M = D
+
+//start drawing smile
+
+@7224
+D = A
+@saveAddress
+A = M
+M = D
+@32 //переход на следующую строку
+D = A 
+@saveAddress
+M = D + M
+
+@7224 //аналогично для всех строк
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@7224
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@0
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@0
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@24582
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@14364
+D = A
+@saveAddress
+A = M
+M = D
+@32 
+D = A 
+@saveAddress
+M = D + M
+
+@4080
+D = A
+@saveAddress
+A = M
+M = D
+
+@LOOP
+0; JMP
