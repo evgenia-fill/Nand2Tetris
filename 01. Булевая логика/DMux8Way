@@ -1,0 +1,39 @@
+// This file is part of www.nand2tetris.org
+// and the book "The Elements of Computing Systems"
+// by Nisan and Schocken, MIT Press.
+// File name: projects/01/DMux8Way.hdl
+
+/**
+ * 8-way demultiplexor:
+ * {a, b, c, d, e, f, g, h} = {in, 0, 0, 0, 0, 0, 0, 0} if sel == 000
+ *                            {0, in, 0, 0, 0, 0, 0, 0} if sel == 001
+ *                            etc.
+ *                            {0, 0, 0, 0, 0, 0, 0, in} if sel == 111
+ */
+
+CHIP DMux8Way {
+    IN in, sel[3];
+    OUT a, b, c, d, e, f, g, h;
+
+    PARTS:
+    // Первый DMux разделяет входной сигнал на два выхода
+    DMux(in = in, sel = sel[2], a = outA, b = outB);
+    
+    // Второй уровень DMux для первого выхода (outA)
+    DMux(in = outA, sel = sel[1], a = outA0, b = outA1);
+    
+    // Второй уровень DMux для второго выхода (outB)
+    DMux(in = outB, sel = sel[1], a = outB0, b = outB1);
+    
+    // Третий уровень DMux для первого выхода из outA (outA0)
+    DMux(in = outA0, sel = sel[0], a = a, b = b);
+    
+    // Третий уровень DMux для второго выхода из outA (outA1)
+    DMux(in = outA1, sel = sel[0], a = c, b = d);
+    
+    // Третий уровень DMux для первого выхода из outB (outB0)
+    DMux(in = outB0, sel = sel[0], a = e, b = f);
+    
+    // Третий уровень DMux для второго выхода из outB (outB1)
+    DMux(in = outB1, sel = sel[0], a = g, b = h);
+}
